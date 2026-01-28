@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Wiki-Explorer Pro: Discover, preview, and explore related Wikipedia articles in a beautiful dark-mode grid or list view.">
+    <meta name="keywords" content="Wikipedia, Search, Explorer, Wikifier, MediaWiki API, Knowledge Discovery">
+    <title>Wiki-Explorer Pro | Discover & Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-dark: #1e293b;
+            --accent: #3b82f6;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: #f1f5f9;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        .wiki-iframe-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .wiki-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Grid vs List Views */
+        .view-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .view-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .view-list .wiki-iframe-container {
+            height: 250px;
+        }
+
+        /* Fullscreen Mode */
+        .fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 50;
+            background: var(--bg-dark);
+            padding: 1rem;
+        }
+
+        @media (max-width: 640px) {
+            .view-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .loading-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="transition-colors duration-300">
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700 p-4">
+            <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-2">
+                    <div class="bg-blue-600 p-2 rounded-lg">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <h1 class="text-xl font-bold tracking-tight">Wiki Explorer <span class="text-blue-500">Pro</span></h1>
+                </div>
+
+                <div class="flex w-full md:w-auto gap-2">
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        placeholder="Search anything (e.g. Barcelona, Dog...)" 
+                        class="flex-1 md:w-80 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-white"
+                        onkeypress="if(event.key === 'Enter') startSearch()"
+                    >
+                    <button 
+                        onclick="startSearch()"
+                        class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-semibold transition shadow-lg shadow-blue-900/20"
+                    >
+                        Explore
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
+                    <button onclick="setView('grid')" id="btnGrid" class="p-2 rounded bg-slate-700 text-white"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 00-1 1v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2h-2zM11 13a2 2 0 00-1 1v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2h-2z"></path></svg></button>
+                    <button onclick="setView('list')" id="btnList" class="p-2 rounded text-slate-400 hover:text-white"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg></button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+            <div id="resultsGrid" class="view-grid">
+                <!-- Initial State -->
+                <div class="col-span-full py-20 text-center opacity-50">
+                    <svg class="w-20 h-20 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                    <p class="text-xl">Discover the world. Start by searching for a topic.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer id="statusBar" class="hidden fixed bottom-0 left-0 w-full bg-blue-600 text-white py-1 px-4 text-xs font-mono text-center z-50">
+            Fetching data...
+        </footer>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div id="fullscreenModal" class="hidden fixed inset-0 z-[100] bg-slate-950 flex flex-col">
+        <div class="p-4 flex justify-between items-center bg-slate-900 border-b border-slate-800">
+            <h2 id="modalTitle" class="font-bold text-lg">Page Preview</h2>
+            <button onclick="closeFullscreen()" class="p-2 hover:bg-slate-800 rounded-full">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="flex-1 bg-white">
+            <iframe id="modalIframe" class="w-full h-full border-none"></iframe>
+        </div>
+    </div>
+
+    <script>
+        let currentResults = [];
+        let viewMode = 'grid';
+
+        function setView(mode) {
+            viewMode = mode;
+            const container = document.getElementById('resultsGrid');
+            const btnGrid = document.getElementById('btnGrid');
+            const btnList = document.getElementById('btnList');
+
+            if (mode === 'grid') {
+                container.className = 'view-grid';
+                btnGrid.classList.add('bg-slate-700', 'text-white');
+                btnList.classList.remove('bg-slate-700', 'text-white');
+                btnList.classList.add('text-slate-400');
+            } else {
+                container.className = 'view-list';
+                btnList.classList.add('bg-slate-700', 'text-white');
+                btnGrid.classList.remove('bg-slate-700', 'text-white');
+                btnGrid.classList.add('text-slate-400');
+            }
+        }
+
+        async function startSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            const grid = document.getElementById('resultsGrid');
+            const status = document.getElementById('statusBar');
+
+            status.classList.remove('hidden');
+            status.innerText = `Searching Wikipedia for "${query}" and related topics...`;
+            
+            try {
+                // We use Opensearch to find all matching/related pages
+                const url = `https://en.wikipedia.org/w/api.php?action=opensearch&format=json&search=${encodeURIComponent(query)}&limit=12&namespace=0&origin=*`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const titles = data[1] || [];
+                const links = data[3] || [];
+
+                if (titles.length === 0) {
+                    grid.innerHTML = `<div class="col-span-full text-center py-20">No pages found for "${query}".</div>`;
+                } else {
+                    renderResults(titles, links);
+                }
+            } catch (err) {
+                console.error(err);
+                status.innerText = "Error fetching data. Check connection.";
+            } finally {
+                setTimeout(() => status.classList.add('hidden'), 2000);
+            }
+        }
+
+        function renderResults(titles, links) {
+            const grid = document.getElementById('resultsGrid');
+            grid.innerHTML = ''; // Clear previous results
+
+            titles.forEach((title, index) => {
+                const link = links[index];
+                const card = document.createElement('div');
+                card.className = 'bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-xl hover:border-blue-500/50 transition-all flex flex-col group';
+                
+                // Use a specific mobile-friendly wikipedia URL
+                const mobileLink = link.replace('en.wikipedia.org', 'en.m.wikipedia.org');
+
+                card.innerHTML = `
+                    <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                        <h3 class="font-bold truncate text-slate-100" title="${title}">${title}</h3>
+                        <div class="flex gap-2">
+                            <button onclick="openFullscreen('${mobileLink}', '${title.replace(/'/g, "\\'")}')" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-blue-400 transition" title="Fullscreen">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                            </button>
+                            <a href="${link}" target="_blank" class="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-blue-400 transition" title="Open Original">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="wiki-iframe-container bg-white relative">
+                        <div class="absolute inset-0 flex items-center justify-center bg-slate-900 loading-placeholder">
+                             <div class="text-blue-500 loading-pulse">Loading Wiki Preview...</div>
+                        </div>
+                        <iframe 
+                            src="about:blank" 
+                            data-src="${mobileLink}" 
+                            class="wiki-iframe opacity-0 transition-opacity duration-700"
+                            onload="this.classList.remove('opacity-0'); this.previousElementSibling.remove();"
+                            loading="lazy"
+                        ></iframe>
+                    </div>
+                `;
+                grid.appendChild(card);
+
+                // Trigger lazy source load
+                setTimeout(() => {
+                    const iframe = card.querySelector('iframe');
+                    iframe.src = iframe.getAttribute('data-src');
+                }, 100 * index);
+            });
+        }
+
+        function openFullscreen(url, title) {
+            const modal = document.getElementById('fullscreenModal');
+            const iframe = document.getElementById('modalIframe');
+            const modalTitle = document.getElementById('modalTitle');
+            
+            modalTitle.innerText = title;
+            iframe.src = url;
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeFullscreen() {
+            const modal = document.getElementById('fullscreenModal');
+            const iframe = document.getElementById('modalIframe');
+            
+            modal.classList.add('hidden');
+            iframe.src = 'about:blank';
+            document.body.style.overflow = '';
+        }
+    </script>
+</body>
+</html>
